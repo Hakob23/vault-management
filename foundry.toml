@@ -3,4 +3,13 @@ src = "src"
 out = "out"
 libs = ["lib"]
 
+remappings = [
+    '@openzeppelin-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/',
+    '@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/',
+    '@aave-v3-core/contracts=lib/aave-v3-core/contracts',
+    '@aave-v3-periphery/contracts=lib/aave-v3-periphery/contracts',
+    '@chainlink/=lib/foundry-chainlink-toolkit/src/',
+    '@uniswap=lib/v2-periphery/contracts'
+]
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
