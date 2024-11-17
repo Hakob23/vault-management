@@ -26,6 +26,10 @@ contract Vault is
     uint256 private constant _BASIS_POINT_SCALE = 1e4;
     bytes32 public constant OWNER_ROLE = keccak256("OWNER_ROLE");
 
+    // Fee Basis Points. E.g. 1% fee is 100
+    uint256 private _entryFeeBasisPoints;
+    uint256 private _exitFeeBasisPoints;
+
     // AMM Router (e.g., Uniswap V2)
     IUniswapV2Router02 public ammRouter;
 
@@ -35,6 +39,10 @@ contract Vault is
 
     // Chainlink Price Feed
     AggregatorV3Interface public priceFeed;
+
+    // Fee Recipinets
+    address private _entryFeeRecipient;
+    address private _exitFeeRecipient;
 
     // Tokens managed by the vault
     address public token0; // Asset token
@@ -69,6 +77,9 @@ contract Vault is
 
         token0 = asset_;
         token1 = token1_;
+
+        _entryFeeRecipient = address(this); // Fees are collected by the vault itself
+        _exitFeeRecipient = address(this); // Fees are collected by the vault itself
     }
 
     // === Vault Core Functions ===
@@ -175,7 +186,7 @@ contract Vault is
     function previewDeposit(
         uint256 assets
     ) public view virtual override returns (uint256) {
-        uint256 fee = _feeOnTotal(assets, _entryFeeBasisPoints());
+        uint256 fee = _feeOnTotal(assets, entryFeeBasisPoints());
         return super.previewDeposit(assets - fee);
     }
 
@@ -184,14 +195,14 @@ contract Vault is
         uint256 shares
     ) public view virtual override returns (uint256) {
         uint256 assets = super.previewMint(shares);
-        return assets + _feeOnRaw(assets, _entryFeeBasisPoints());
+        return assets + _feeOnRaw(assets, entryFeeBasisPoints());
     }
 
     /// @dev Preview adding an exit fee on withdraw. See {IERC4626-previewWithdraw}.
     function previewWithdraw(
         uint256 assets
     ) public view virtual override returns (uint256) {
-        uint256 fee = _feeOnRaw(assets, _exitFeeBasisPoints());
+        uint256 fee = _feeOnRaw(assets, exitFeeBasisPoints());
         return super.previewWithdraw(assets + fee);
     }
 
@@ -200,7 +211,7 @@ contract Vault is
         uint256 shares
     ) public view virtual override returns (uint256) {
         uint256 assets = super.previewRedeem(shares);
-        return assets - _feeOnTotal(assets, _exitFeeBasisPoints());
+        return assets - _feeOnTotal(assets, exitFeeBasisPoints());
     }
 
     /// @dev Send entry fee to {_entryFeeRecipient}. See {IERC4626-_deposit}.
@@ -210,8 +221,8 @@ contract Vault is
         uint256 assets,
         uint256 shares
     ) internal virtual override {
-        uint256 fee = _feeOnTotal(assets, _entryFeeBasisPoints());
-        address recipient = _entryFeeRecipient();
+        uint256 fee = _feeOnTotal(assets, entryFeeBasisPoints());
+        address recipient = entryFeeRecipient();
 
         super._deposit(caller, receiver, assets - fee, shares);
 
@@ -228,8 +239,8 @@ contract Vault is
         uint256 assets,
         uint256 shares
     ) internal virtual override {
-        uint256 fee = _feeOnRaw(assets, _exitFeeBasisPoints());
-        address recipient = _exitFeeRecipient();
+        uint256 fee = _feeOnRaw(assets, exitFeeBasisPoints());
+        address recipient = exitFeeRecipient();
 
         super._withdraw(caller, receiver, owner_, assets - fee, shares);
 
@@ -240,20 +251,20 @@ contract Vault is
 
     // === Fee Configuration ===
 
-    function _entryFeeBasisPoints() internal view virtual returns (uint256) {
-        return 100; // 1% entry fee
+    function entryFeeBasisPoints() internal view virtual returns (uint256) {
+        return _entryFeeBasisPoints;
     }
 
-    function _exitFeeBasisPoints() internal view virtual returns (uint256) {
-        return 50; // 0.5% exit fee
+    function exitFeeBasisPoints() internal view virtual returns (uint256) {
+        return _exitFeeBasisPoints;
     }
 
-    function _entryFeeRecipient() internal view virtual returns (address) {
-        return address(this); // Fees are collected by the vault itself
+    function entryFeeRecipient() internal view virtual returns (address) {
+        return _entryFeeRecipient;
     }
 
-    function _exitFeeRecipient() internal view virtual returns (address) {
-        return address(this); // Fees are collected by the vault itself
+    function exitFeeRecipient() internal view virtual returns (address) {
+        return _exitFeeRecipient;
     }
 
     // === Fee Operations ===
@@ -330,6 +341,18 @@ contract Vault is
         address newEntryFeeRecipient,
         address newExitFeeRecipient
     ) external onlyRole(OWNER_ROLE) {
-        // TODO
+        _entryFeeRecipient = newEntryFeeRecipient;
+        _exitFeeRecipient = newExitFeeRecipient;
+    }
+
+    /// @notice Allows the owner to update the fee recipients.
+    /// @param newEntryFeeBasisPoints The amount of the new entry fee.
+    /// @param newExitFeeBasisPoints The amount of the new exit fee.
+    function updateFeeBasisPoints(
+        uint256 newEntryFeeBasisPoints,
+        uint256 newExitFeeBasisPoints
+    ) external onlyRole(OWNER_ROLE) {
+        _entryFeeBasisPoints = newEntryFeeBasisPoints;
+        _exitFeeBasisPoints = newExitFeeBasisPoints;
     }
 }
