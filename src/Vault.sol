@@ -48,6 +48,9 @@ contract Vault is
     address public token0; // Asset token
     address public token1; // Secondary token for swapping
 
+    error ZeroAddress();
+    error InvalidPathLength();
+
     /// @notice Initializes the vault with the necessary parameters.
     /// @param asset_ The address of the ERC20 asset managed by the vault.
     /// @param ammRouter_ The address of the AMM router (e.g., Uniswap V2 router).
@@ -100,7 +103,9 @@ contract Vault is
         address[] calldata path,
         uint256 deadline
     ) external onlyRole(OWNER_ROLE) nonReentrant {
-        require(path.length >= 2, "Vault: Invalid swap path");
+        if (path.length < 2) {
+            revert InvalidPathLength();
+        }
         IERC20(path[0]).approve(address(ammRouter), amountIn);
 
         ammRouter.swapExactTokensForTokens(
@@ -297,16 +302,17 @@ contract Vault is
 
     // === Security Measures ===
 
-    /// @dev Ensures that only allowed tokens are accepted.
-    modifier onlyAllowedTokens(address token) {
-        require(token == token0 || token == token1, "Vault: Token not allowed");
+    modifier zeroAddress(address _address) {
+        if(_address == address(0)) {
+            revert ZeroAddress();
+        }
         _;
     }
 
     /// @notice Allows the owner to update the AMM router address.
     /// @param newRouter The address of the new AMM router.
-    function updateAMMRouter(address newRouter) external onlyRole(OWNER_ROLE) {
-        require(newRouter != address(0), "Vault: Invalid router address");
+    function updateAMMRouter(address newRouter) external onlyRole(OWNER_ROLE) zeroAddress(newRouter) {
+        
         ammRouter = IUniswapV2Router02(newRouter);
     }
 
@@ -314,11 +320,7 @@ contract Vault is
     /// @param newLendingPool The address of the new lending pool.
     function updateLendingPool(
         address newLendingPool
-    ) external onlyRole(OWNER_ROLE) {
-        require(
-            newLendingPool != address(0),
-            "Vault: Invalid lending pool address"
-        );
+    ) external onlyRole(OWNER_ROLE) zeroAddress(newLendingPool) {
         lendingPool = IPool(newLendingPool);
     }
 
@@ -326,11 +328,7 @@ contract Vault is
     /// @param newPriceFeed The address of the new price feed.
     function updatePriceFeed(
         address newPriceFeed
-    ) external onlyRole(OWNER_ROLE) {
-        require(
-            newPriceFeed != address(0),
-            "Vault: Invalid price feed address"
-        );
+    ) external onlyRole(OWNER_ROLE) zeroAddress(newPriceFeed) {
         priceFeed = AggregatorV3Interface(newPriceFeed);
     }
 
