@@ -51,6 +51,19 @@ contract Vault is
     error ZeroAddress();
     error InvalidPathLength();
 
+    // Events
+    event TokensSwapped(address indexed caller, uint256 amountIn, uint256 amountOut);
+    event TokensDepositedToAave(address indexed caller, uint256 amount);
+    event TokensWithdrawnFromAave(address indexed caller, uint256 amount);
+    event TokensBorrowedFromAave(address indexed caller, address assetToBorrow, uint256 amount);
+    event TokensRepaidToAave(address indexed caller, address assetToRepay, uint256 amount);
+    event VaultRebalanced(address indexed caller);
+    event AMMRouterUpdated(address indexed caller, address newRouter);
+    event LendingPoolUpdated(address indexed caller, address newLendingPool);
+    event PriceFeedUpdated(address indexed caller, address newPriceFeed);
+    event FeeRecipientsUpdated(address indexed caller, address newEntryFeeRecipient, address newExitFeeRecipient);
+    event FeeBasisPointsUpdated(address indexed caller, uint256 newEntryFeeBasisPoints, uint256 newExitFeeBasisPoints);
+
     /// @notice Initializes the vault with the necessary parameters.
     /// @param asset_ The address of the ERC20 asset managed by the vault.
     /// @param ammRouter_ The address of the AMM router (e.g., Uniswap V2 router).
@@ -115,6 +128,7 @@ contract Vault is
             address(this),
             deadline
         );
+        emit TokensSwapped(msg.sender, amountIn, amountOutMin);
     }
 
     /// @notice Deposits tokens into Aave lending pool. Only callable by the owner.
@@ -124,6 +138,7 @@ contract Vault is
     ) external onlyRole(OWNER_ROLE) nonReentrant {
         IERC20(asset()).approve(address(lendingPool), amount);
         lendingPool.deposit(asset(), amount, address(this), 0);
+        emit TokensDepositedToAave(msg.sender, amount);
     }
 
     /// @notice Withdraws tokens from Aave lending pool. Only callable by the owner.
@@ -132,6 +147,7 @@ contract Vault is
         uint256 amount
     ) external onlyRole(OWNER_ROLE) nonReentrant {
         lendingPool.withdraw(asset(), amount, address(this));
+        emit TokensWithdrawnFromAave(msg.sender, amount);
     }
 
     /// @notice Borrows tokens from Aave lending pool. Only callable by the owner.
@@ -150,6 +166,7 @@ contract Vault is
             0, // referral code
             address(this)
         );
+        emit TokensBorrowedFromAave(msg.sender, assetToBorrow, amount);
     }
 
     /// @notice Repays borrowed tokens to Aave lending pool. Only callable by the owner.
@@ -168,12 +185,14 @@ contract Vault is
             interestRateMode,
             address(this)
         );
+        emit TokensRepaidToAave(msg.sender, assetToRepay, amount);
     }
 
     /// @notice Rebalances the vault's asset allocation. Only callable by the owner.
     /// @dev This is a placeholder function for rebalancing logic.
     function rebalance() external onlyRole(OWNER_ROLE) nonReentrant {
         // TODO
+        emit VaultRebalanced(msg.sender);
     }
 
     // === Price Feed Functions ===
@@ -314,6 +333,7 @@ contract Vault is
     function updateAMMRouter(address newRouter) external onlyRole(OWNER_ROLE) zeroAddress(newRouter) {
         
         ammRouter = IUniswapV2Router02(newRouter);
+        emit AMMRouterUpdated(msg.sender, newRouter);
     }
 
     /// @notice Allows the owner to update the Aave lending pool address.
@@ -322,6 +342,7 @@ contract Vault is
         address newLendingPool
     ) external onlyRole(OWNER_ROLE) zeroAddress(newLendingPool) {
         lendingPool = IPool(newLendingPool);
+        emit LendingPoolUpdated(msg.sender, newLendingPool);
     }
 
     /// @notice Allows the owner to update the Chainlink price feed address.
@@ -330,6 +351,7 @@ contract Vault is
         address newPriceFeed
     ) external onlyRole(OWNER_ROLE) zeroAddress(newPriceFeed) {
         priceFeed = AggregatorV3Interface(newPriceFeed);
+        emit PriceFeedUpdated(msg.sender, newPriceFeed);
     }
 
     /// @notice Allows the owner to update the fee recipients.
@@ -341,6 +363,7 @@ contract Vault is
     ) external onlyRole(OWNER_ROLE) {
         _entryFeeRecipient = newEntryFeeRecipient;
         _exitFeeRecipient = newExitFeeRecipient;
+        emit FeeRecipientsUpdated(msg.sender, newEntryFeeRecipient, newExitFeeRecipient);
     }
 
     /// @notice Allows the owner to update the fee recipients.
@@ -352,5 +375,6 @@ contract Vault is
     ) external onlyRole(OWNER_ROLE) {
         _entryFeeBasisPoints = newEntryFeeBasisPoints;
         _exitFeeBasisPoints = newExitFeeBasisPoints;
+        emit FeeBasisPointsUpdated(msg.sender, newEntryFeeBasisPoints, newExitFeeBasisPoints);
     }
 }
