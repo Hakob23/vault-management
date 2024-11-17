@@ -15,6 +15,8 @@ import {IPoolAddressesProvider} from "@aave-v3-core/contracts/interfaces/IPoolAd
 
 import {AggregatorV3Interface} from "@chainlink/interfaces/feeds/AggregatorV3Interface.sol";
 
+import "./IStrategy.sol";
+
 contract Vault is
     ERC4626Upgradeable,
     AccessControlUpgradeable,
@@ -25,6 +27,7 @@ contract Vault is
 
     uint256 private constant _BASIS_POINT_SCALE = 1e4;
     bytes32 public constant OWNER_ROLE = keccak256("OWNER_ROLE");
+    bytes32 public constant STRATEGY_ROLE = keccak256("STRATEGY_ROLE");
 
     // Fee Basis Points. E.g. 1% fee is 100
     uint256 private _entryFeeBasisPoints;
@@ -40,6 +43,8 @@ contract Vault is
     // Chainlink Price Feed
     AggregatorV3Interface public priceFeed;
 
+    IStrategy public strategy;
+
     // Fee Recipinets
     address private _entryFeeRecipient;
     address private _exitFeeRecipient;
@@ -50,19 +55,40 @@ contract Vault is
     error ZeroAddress();
     error InvalidPathLength();
     error NoSharesMinted();
+    error AccessDenied();
 
     // Events
-    event TokensSwapped(address indexed caller, uint256 amountIn, uint256 amountOut);
+    event TokensSwapped(
+        address indexed caller,
+        uint256 amountIn,
+        uint256 amountOut
+    );
     event TokensDepositedToAave(address indexed caller, uint256 amount);
     event TokensWithdrawnFromAave(address indexed caller, uint256 amount);
-    event TokensBorrowedFromAave(address indexed caller, address assetToBorrow, uint256 amount);
-    event TokensRepaidToAave(address indexed caller, address assetToRepay, uint256 amount);
+    event TokensBorrowedFromAave(
+        address indexed caller,
+        address assetToBorrow,
+        uint256 amount
+    );
+    event TokensRepaidToAave(
+        address indexed caller,
+        address assetToRepay,
+        uint256 amount
+    );
     event VaultRebalanced(address indexed caller);
     event AMMRouterUpdated(address indexed caller, address newRouter);
     event LendingPoolUpdated(address indexed caller, address newLendingPool);
     event PriceFeedUpdated(address indexed caller, address newPriceFeed);
-    event FeeRecipientsUpdated(address indexed caller, address newEntryFeeRecipient, address newExitFeeRecipient);
-    event FeeBasisPointsUpdated(address indexed caller, uint256 newEntryFeeBasisPoints, uint256 newExitFeeBasisPoints);
+    event FeeRecipientsUpdated(
+        address indexed caller,
+        address newEntryFeeRecipient,
+        address newExitFeeRecipient
+    );
+    event FeeBasisPointsUpdated(
+        address indexed caller,
+        uint256 newEntryFeeBasisPoints,
+        uint256 newExitFeeBasisPoints
+    );
 
     // Health Factor variable
     uint256 private _targetHealthFactor;
@@ -78,7 +104,8 @@ contract Vault is
         address ammRouter_,
         address lendingPool_,
         address dataProvider_,
-        address priceFeed_
+        address priceFeed_,
+        address strategy_
     ) public initializer {
         __ERC4626_init(IERC20(asset_));
         __AccessControl_init();
@@ -94,10 +121,25 @@ contract Vault is
 
         token0 = asset_;
 
+        strategy = IStrategy(strategy_);
+
         _entryFeeRecipient = address(this); // Fees are collected by the vault itself
         _exitFeeRecipient = address(this); // Fees are collected by the vault itself
 
         _targetHealthFactor = 1e18; // Initialize health factor to 1_000
+
+        // Grant the strategy role to the strategy contract
+        _grantRole(STRATEGY_ROLE, strategy_);
+    }
+
+    modifier onlyRoles() {
+        if (
+            !hasRole(OWNER_ROLE, msg.sender) ||
+            !hasRole(STRATEGY_ROLE, msg.sender)
+        ) {
+            revert AccessDenied();
+        }
+        _;
     }
 
     // === Vault Core Functions ===
@@ -107,7 +149,7 @@ contract Vault is
 
     // === Owner-Controlled Actions ===
 
-    /// @notice Swaps tokens on an AMM. Only callable by the owner.
+    /// @notice Swaps tokens on an AMM. Callable by the owner or strategy.
     /// @param amountIn The amount of input tokens to swap.
     /// @param amountOutMin The minimum amount of output tokens expected.
     /// @param path The swap path.
@@ -117,7 +159,7 @@ contract Vault is
         uint256 amountOutMin,
         address[] calldata path,
         uint256 deadline
-    ) external onlyRole(OWNER_ROLE) nonReentrant {
+    ) external onlyRoles nonReentrant {
         if (path.length < 2) {
             revert InvalidPathLength();
         }
@@ -133,26 +175,22 @@ contract Vault is
         emit TokensSwapped(msg.sender, amountIn, amountOutMin);
     }
 
-    /// @notice Deposits tokens into Aave lending pool. Only callable by the owner.
+    /// @notice Deposits tokens into Aave lending pool. Callable by the owner or strategy.
     /// @param amount The amount of tokens to deposit.
-    function depositToAave(
-        uint256 amount
-    ) external onlyRole(OWNER_ROLE) nonReentrant {
+    function depositToAave(uint256 amount) external onlyRoles nonReentrant {
         IERC20(asset()).approve(address(lendingPool), amount);
         lendingPool.deposit(asset(), amount, address(this), 0);
         emit TokensDepositedToAave(msg.sender, amount);
     }
 
-    /// @notice Withdraws tokens from Aave lending pool. Only callable by the owner.
+    /// @notice Withdraws tokens from Aave lending pool. Callable by the owner or strategy.
     /// @param amount The amount of tokens to withdraw.
-    function withdrawFromAave(
-        uint256 amount
-    ) external onlyRole(OWNER_ROLE) nonReentrant {
+    function withdrawFromAave(uint256 amount) external onlyRoles nonReentrant {
         lendingPool.withdraw(asset(), amount, address(this));
         emit TokensWithdrawnFromAave(msg.sender, amount);
     }
 
-    /// @notice Borrows tokens from Aave lending pool. Only callable by the owner.
+    /// @notice Borrows tokens from Aave lending pool. Callable by the owner or strategy.
     /// @param assetToBorrow The address of the asset to borrow.
     /// @param amount The amount to borrow.
     /// @param interestRateMode The interest rate mode (1 = Stable, 2 = Variable).
@@ -160,7 +198,7 @@ contract Vault is
         address assetToBorrow,
         uint256 amount,
         uint256 interestRateMode
-    ) external onlyRole(OWNER_ROLE) nonReentrant {
+    ) external onlyRoles nonReentrant {
         lendingPool.borrow(
             assetToBorrow,
             amount,
@@ -171,7 +209,7 @@ contract Vault is
         emit TokensBorrowedFromAave(msg.sender, assetToBorrow, amount);
     }
 
-    /// @notice Repays borrowed tokens to Aave lending pool. Only callable by the owner.
+    /// @notice Repays borrowed tokens to Aave lending pool. Callable by the owner or strategy.
     /// @param assetToRepay The address of the asset to repay.
     /// @param amount The amount to repay.
     /// @param interestRateMode The interest rate mode (1 = Stable, 2 = Variable).
@@ -179,7 +217,7 @@ contract Vault is
         address assetToRepay,
         uint256 amount,
         uint256 interestRateMode
-    ) external onlyRole(OWNER_ROLE) nonReentrant {
+    ) external onlyRoles nonReentrant {
         IERC20(assetToRepay).approve(address(lendingPool), amount);
         lendingPool.repay(
             assetToRepay,
@@ -195,6 +233,20 @@ contract Vault is
     function rebalance() external onlyRole(OWNER_ROLE) nonReentrant {
         // TODO
         emit VaultRebalanced(msg.sender);
+    }
+
+    /// @notice Updates the strategy contract address. Callable by the owner only.
+    /// @param newStrategy The address of the new strategy contract.
+    function updateStrategy(
+        address newStrategy
+    ) external onlyRole(OWNER_ROLE) zeroAddress(newStrategy) {
+        // Revoke the old strategy role if it exists
+        if (address(strategy) != address(0)) {
+            _revokeRole(STRATEGY_ROLE, address(strategy));
+        }
+
+        strategy = IStrategy(newStrategy); // Update the strategy contract address
+        _grantRole(STRATEGY_ROLE, newStrategy); // Grant the strategy role to the new strategy contract
     }
 
     // === Price Feed Functions ===
@@ -324,7 +376,7 @@ contract Vault is
     // === Security Measures ===
 
     modifier zeroAddress(address _address) {
-        if(_address == address(0)) {
+        if (_address == address(0)) {
             revert ZeroAddress();
         }
         _;
@@ -332,8 +384,9 @@ contract Vault is
 
     /// @notice Allows the owner to update the AMM router address.
     /// @param newRouter The address of the new AMM router.
-    function updateAMMRouter(address newRouter) external onlyRole(OWNER_ROLE) zeroAddress(newRouter) {
-        
+    function updateAMMRouter(
+        address newRouter
+    ) external onlyRole(OWNER_ROLE) zeroAddress(newRouter) {
         ammRouter = IUniswapV2Router02(newRouter);
         emit AMMRouterUpdated(msg.sender, newRouter);
     }
@@ -365,7 +418,11 @@ contract Vault is
     ) external onlyRole(OWNER_ROLE) {
         _entryFeeRecipient = newEntryFeeRecipient;
         _exitFeeRecipient = newExitFeeRecipient;
-        emit FeeRecipientsUpdated(msg.sender, newEntryFeeRecipient, newExitFeeRecipient);
+        emit FeeRecipientsUpdated(
+            msg.sender,
+            newEntryFeeRecipient,
+            newExitFeeRecipient
+        );
     }
 
     /// @notice Allows the owner to update the fee recipients.
@@ -377,12 +434,18 @@ contract Vault is
     ) external onlyRole(OWNER_ROLE) {
         _entryFeeBasisPoints = newEntryFeeBasisPoints;
         _exitFeeBasisPoints = newExitFeeBasisPoints;
-        emit FeeBasisPointsUpdated(msg.sender, newEntryFeeBasisPoints, newExitFeeBasisPoints);
+        emit FeeBasisPointsUpdated(
+            msg.sender,
+            newEntryFeeBasisPoints,
+            newExitFeeBasisPoints
+        );
     }
 
     /// @notice Allows the owner to update the health factor.
     /// @param newHealthFactor The new health factor value.
-    function updateHealthFactor(uint256 newHealthFactor) external onlyRole(OWNER_ROLE) {
+    function updateHealthFactor(
+        uint256 newHealthFactor
+    ) external onlyRole(OWNER_ROLE) {
         _targetHealthFactor = newHealthFactor;
     }
 
@@ -392,7 +455,7 @@ contract Vault is
         Math.Rounding rounding
     ) internal view virtual override returns (uint256) {
         // Include _targetHealthFactor in the calculation
-        uint256 adjustedAssets = assets * _targetHealthFactor / 1e18; // Assuming _targetHealthFactor is scaled by 1e18
+        uint256 adjustedAssets = (assets * _targetHealthFactor) / 1e18; // Assuming _targetHealthFactor is scaled by 1e18
         return super._convertToShares(adjustedAssets, rounding);
     }
 
@@ -402,7 +465,7 @@ contract Vault is
         Math.Rounding rounding
     ) internal view virtual override returns (uint256) {
         // Include _targetHealthFactor in the calculation
-        uint256 adjustedShares = shares * 1e18 / _targetHealthFactor; // Assuming _targetHealthFactor is scaled by 1e18
+        uint256 adjustedShares = (shares * 1e18) / _targetHealthFactor; // Assuming _targetHealthFactor is scaled by 1e18
         return super._convertToAssets(adjustedShares, rounding);
     }
 
@@ -415,7 +478,6 @@ contract Vault is
     /// @notice Calculates the real health factor.
     /// @return The calculated real health factor.
     function realHealthFactor() public view returns (uint256) {
-
         uint256 totalSharesMinted = totalSupply();
 
         // Avoid division by zero
@@ -429,6 +491,4 @@ contract Vault is
         // Calculate the real health factor
         return assetPrice.mulDiv(totalAssets(), totalSharesMinted);
     }
-
-    
 }
