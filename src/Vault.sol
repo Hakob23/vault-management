@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.20;
 
 import {ERC4626Upgradeable} from "@openzeppelin-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -44,12 +44,12 @@ contract Vault is
     address private _entryFeeRecipient;
     address private _exitFeeRecipient;
 
-    // Tokens managed by the vault
+    // IERC20 Token managed by the vault
     address public token0; // Asset token
-    address public token1; // Secondary token for swapping
 
     error ZeroAddress();
     error InvalidPathLength();
+    error NoSharesMinted();
 
     // Events
     event TokensSwapped(address indexed caller, uint256 amountIn, uint256 amountOut);
@@ -64,20 +64,21 @@ contract Vault is
     event FeeRecipientsUpdated(address indexed caller, address newEntryFeeRecipient, address newExitFeeRecipient);
     event FeeBasisPointsUpdated(address indexed caller, uint256 newEntryFeeBasisPoints, uint256 newExitFeeBasisPoints);
 
+    // Health Factor variable
+    uint256 private _targetHealthFactor;
+
     /// @notice Initializes the vault with the necessary parameters.
     /// @param asset_ The address of the ERC20 asset managed by the vault.
     /// @param ammRouter_ The address of the AMM router (e.g., Uniswap V2 router).
     /// @param lendingPool_ The address of the Aave lending pool.
     /// @param dataProvider_ The address of the Aave protocol data provider.
     /// @param priceFeed_ The address of the Chainlink price feed.
-    /// @param token1_ The address of the secondary token for swaps.
     function initialize(
         address asset_,
         address ammRouter_,
         address lendingPool_,
         address dataProvider_,
-        address priceFeed_,
-        address token1_
+        address priceFeed_
     ) public initializer {
         __ERC4626_init(IERC20(asset_));
         __AccessControl_init();
@@ -92,10 +93,11 @@ contract Vault is
         priceFeed = AggregatorV3Interface(priceFeed_);
 
         token0 = asset_;
-        token1 = token1_;
 
         _entryFeeRecipient = address(this); // Fees are collected by the vault itself
         _exitFeeRecipient = address(this); // Fees are collected by the vault itself
+
+        _targetHealthFactor = 1e18; // Initialize health factor to 1_000
     }
 
     // === Vault Core Functions ===
@@ -377,4 +379,56 @@ contract Vault is
         _exitFeeBasisPoints = newExitFeeBasisPoints;
         emit FeeBasisPointsUpdated(msg.sender, newEntryFeeBasisPoints, newExitFeeBasisPoints);
     }
+
+    /// @notice Allows the owner to update the health factor.
+    /// @param newHealthFactor The new health factor value.
+    function updateHealthFactor(uint256 newHealthFactor) external onlyRole(OWNER_ROLE) {
+        _targetHealthFactor = newHealthFactor;
+    }
+
+    /// @dev Converts assets to shares, factoring in the health factor.
+    function _convertToShares(
+        uint256 assets,
+        Math.Rounding rounding
+    ) internal view virtual override returns (uint256) {
+        // Include _targetHealthFactor in the calculation
+        uint256 adjustedAssets = assets * _targetHealthFactor / 1e18; // Assuming _targetHealthFactor is scaled by 1e18
+        return super._convertToShares(adjustedAssets, rounding);
+    }
+
+    /// @dev Converts shares to assets, factoring in the health factor.
+    function _convertToAssets(
+        uint256 shares,
+        Math.Rounding rounding
+    ) internal view virtual override returns (uint256) {
+        // Include _targetHealthFactor in the calculation
+        uint256 adjustedShares = shares * 1e18 / _targetHealthFactor; // Assuming _targetHealthFactor is scaled by 1e18
+        return super._convertToAssets(adjustedShares, rounding);
+    }
+
+    /// @notice Returns the current health factor.
+    /// @return The current health factor.
+    function targetHealthFactor() external view returns (uint256) {
+        return _targetHealthFactor;
+    }
+
+    /// @notice Calculates the real health factor.
+    /// @return The calculated real health factor.
+    function realHealthFactor() public view returns (uint256) {
+
+        uint256 totalSharesMinted = totalSupply();
+
+        // Avoid division by zero
+        if (totalSharesMinted == 0) {
+            revert NoSharesMinted();
+        }
+
+        // Get the latest price of the asset
+        uint256 assetPrice = uint256(getLatestPrice());
+
+        // Calculate the real health factor
+        return assetPrice.mulDiv(totalAssets(), totalSharesMinted);
+    }
+
+    
 }

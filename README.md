@@ -64,3 +64,36 @@ $ forge --help
 $ anvil --help
 $ cast --help
 ```
+
+Hakob jan, here you go: 
+Technical Task: Vault Contract with AMM or Aave Integration
+
+Goal:
+Develop a Vault smart contract where the owner manages strategy (AMM or Aave), rebalancing, and token swaps. Users can deposit and withdraw, receiving shares representing their stake.
+
+Requirements:
+Vault Core Functions:
+
+Deposit/Withdraw: Users deposit tokens and receive shares, withdraw based on share value.
+Share Calculation: Shares represent ownership of vault's total assets.
+AMM Integration (e.g., Uniswap/Sushiswap) (Optional):
+
+Owner can swap tokens on AMMs, manage slippage and price impact.
+Aave Integration (Optional):
+
+Owner can lend on Aave or borrow for leverage, maintaining healthy collateral.
+Owner-Controlled Actions:
+
+Rebalancing/Swapping: Only the vault owner can execute rebalancing, strategy switching, and token swaps.
+Security & Best Practices:
+
+Use oracles (e.g., Chainlink) for price feeds.
+Upgradability.
+Gas-optimized code, role-based access control.
+Comprehensive tests and documentation.
+
+Deliverables:
+Solidity Vault contract
+Test suite & documentation
+
+On github, please invite @hirama to repo.
