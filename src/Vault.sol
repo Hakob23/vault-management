@@ -7,6 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {AccessControlUpgradeable} from "@openzeppelin-upgradeable/access/AccessControlUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import "@uniswap/interfaces/IUniswapV2Router02.sol";
 
@@ -20,10 +21,13 @@ import "./IStrategy.sol";
 contract Vault is
     ERC4626Upgradeable,
     AccessControlUpgradeable,
-    ReentrancyGuardUpgradeable
+    ReentrancyGuardUpgradeable,
+    UUPSUpgradeable
 {
     using Math for uint256;
     using SafeERC20 for IERC20;
+
+    uint256[50] private __gap;
 
     uint256 private constant _BASIS_POINT_SCALE = 1e4;
     bytes32 public constant OWNER_ROLE = keccak256("OWNER_ROLE");
@@ -110,6 +114,7 @@ contract Vault is
         __ERC4626_init(IERC20(asset_));
         __AccessControl_init();
         __ReentrancyGuard_init();
+        __UUPSUpgradeable_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(OWNER_ROLE, msg.sender);
@@ -141,6 +146,8 @@ contract Vault is
         }
         _;
     }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(OWNER_ROLE) {}
 
     // === Vault Core Functions ===
 
