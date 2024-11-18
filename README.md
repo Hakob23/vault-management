@@ -1,99 +1,64 @@
-## Foundry
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
 
-Foundry consists of:
+# Vault Smart Contract Documentation
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+## Overview
+The Vault contract is an upgradeable ERC4626-compliant vault that integrates with AMMs (like Uniswap) and lending protocols (like Aave). It features role-based access control, fee management, and price feed integration.
 
-## Documentation
+## Key Features
+- ERC4626 compliant vault functionality
+- AMM integration for token swaps
+- Aave integration for lending/borrowing
+- Chainlink price feed integration
+- Fee management system
+- Role-based access control
+- Upgradeable design
 
-https://book.getfoundry.sh/
+## Core Roles
+- `OWNER_ROLE`: Can perform administrative actions
+- `STRATEGY_ROLE`: Can execute strategy-related functions
+- `DEFAULT_ADMIN_ROLE`: Can manage roles
 
-## Usage
+## Main Functions
 
-### Build
-
-```shell
-$ forge build
+### Initialization
+```solidity
+function initialize(
+    address asset_,
+    address ammRouter_,
+    address lendingPool_,
+    address dataProvider_,
+    address priceFeed_,
+    address strategy_
+) public initializer
 ```
 
-### Test
+### Core Vault Operations
+- `deposit(uint256 assets, address receiver)`: Deposit assets and receive shares
+- `withdraw(uint256 assets, address receiver, address owner)`: Withdraw assets by burning shares
+- `mint(uint256 shares, address receiver)`: Mint exact shares by depositing assets
+- `redeem(uint256 shares, address receiver, address owner)`: Redeem shares for assets
 
-```shell
-$ forge test
+### AMM Operations
+```solidity
+function swapTokensOnAMM(
+    uint256 amountIn,
+    uint256 amountOutMin,
+    address[] calldata path,
+    uint256 deadline
+) external
 ```
 
-### Format
-
-```shell
-$ forge fmt
+### Aave Operations
+```solidity
+function depositToAave(uint256 amount) external
+function withdrawFromAave(uint256 amount) external
+function borrowFromAave(address assetToBorrow, uint256 amount, uint256 interestRateMode) external
+function repayToAave(address assetToRepay, uint256 amount, uint256 interestRateMode) external
 ```
 
-### Gas Snapshots
-
-```shell
-$ forge snapshot
+### Fee Management
+```solidity
+function updateFeeBasisPoints(uint256 newEntryFeeBasisPoints, uint256 newExitFeeBasisPoints) external
+function updateFeeRecipients(address newEntryFeeRecipient, address newExitFeeRecipient) external
 ```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
-
-Hakob jan, here you go: 
-Technical Task: Vault Contract with AMM or Aave Integration
-
-Goal:
-Develop a Vault smart contract where the owner manages strategy (AMM or Aave), rebalancing, and token swaps. Users can deposit and withdraw, receiving shares representing their stake.
-
-Requirements:
-Vault Core Functions:
-
-Deposit/Withdraw: Users deposit tokens and receive shares, withdraw based on share value.
-Share Calculation: Shares represent ownership of vault's total assets.
-AMM Integration (e.g., Uniswap/Sushiswap) (Optional):
-
-Owner can swap tokens on AMMs, manage slippage and price impact.
-Aave Integration (Optional):
-
-Owner can lend on Aave or borrow for leverage, maintaining healthy collateral.
-Owner-Controlled Actions:
-
-Rebalancing/Swapping: Only the vault owner can execute rebalancing, strategy switching, and token swaps.
-Security & Best Practices:
-
-Use oracles (e.g., Chainlink) for price feeds.
-Upgradability.
-Gas-optimized code, role-based access control.
-Comprehensive tests and documentation.
-
-Deliverables:
-Solidity Vault contract
-Test suite & documentation
-
-On github, please invite @hirama to repo.
