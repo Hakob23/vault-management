@@ -108,8 +108,7 @@ contract Vault is
         address ammRouter_,
         address lendingPool_,
         address dataProvider_,
-        address priceFeed_,
-        address strategy_
+        address priceFeed_
     ) public initializer {
         __ERC4626_init(IERC20(asset_));
         __AccessControl_init();
@@ -126,15 +125,10 @@ contract Vault is
 
         token0 = asset_;
 
-        strategy = IStrategy(strategy_);
-
         _entryFeeRecipient = address(this); // Fees are collected by the vault itself
         _exitFeeRecipient = address(this); // Fees are collected by the vault itself
 
         _targetHealthFactor = 1e18; // Initialize health factor to 1_000
-
-        // Grant the strategy role to the strategy contract
-        _grantRole(STRATEGY_ROLE, strategy_);
     }
 
     modifier onlyRoles() {
